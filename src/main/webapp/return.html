@@ -128,7 +128,7 @@
             function fine(loan) {
                 const due = Lib.parseTime(loan.dueDate);
                 if (!due) return '0.00';
-                const days = Math.max(0, Math.ceil((Date.now() - due.getTime()) / 86400000));
+                const days = Math.max(0, Math.ceil((Date.now() - due) / 86400000));
                 return (days * 1.5).toFixed(2);
             }
 
