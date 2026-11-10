@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>推荐图书 - 图书馆管理系统</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app" v-cloak>
+    <header class="topbar">
+        <div class="brand">
+            <span class="logo">图</span>
+            <div>图书馆管理系统 <small>LibraryWeb2026</small></div>
+        </div>
+        <div class="top-user" v-if="me">
+            <span class="role-badge" :class="Lib.roleClass(me.role)">{{ me.role }}</span>
+            <span>{{ me.name }}</span>
+            <button class="btn btn-ghost btn-sm" @click="doLogout">退出登录</button>
+        </div>
+    </header>
+
+    <div class="layout">
+        <aside class="sidebar" id="sidebar"></aside>
+        <main class="main">
+            <div class="page-head">
+                <div>
+                    <h1 class="page-title">推荐图书</h1>
+                    <div class="page-sub">推荐馆藏中没有的图书；若馆藏已存在相似图书，将直接展示馆藏信息而不提交推荐。</div>
+                </div>
+                <span class="badge badge-info">教师功能</span>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <div class="card-title"><span class="dot"></span>填写推荐信息</div>
+                    <span class="text-muted">提交后进入待审核状态</span>
+                </div>
+                <div class="card-body">
+                    <div v-if="error" class="form-error">{{ error }}</div>
+                    <div class="form-grid">
+                        <div class="field">
+                            <label>书名<span class="required">*</span></label>
+                            <input class="input" v-model.trim="form.bookName" maxlength="20" placeholder="请输入推荐的书名">
+                        </div>
+                        <div class="field">
+                            <label>作者<span class="required">*</span></label>
+                            <input class="input" v-model.trim="form.author" maxlength="20" placeholder="请输入作者">
+                        </div>
+                        <div class="field">
+                            <label>出版社</label>
+                            <input class="input" v-model.trim="form.publisher" maxlength="20" placeholder="请输入出版社">
+                        </div>
+                        <div class="field">
+                            <label>参考价格（元）</label>
+                            <input class="input" type="number" min="0" step="0.01" v-model.number="form.price">
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button class="btn btn-ghost" @click="resetForm">清空</button>
+                        <button class="btn btn-primary" @click="submit" :disabled="checking">
+                            {{ checking ? '正在检查馆藏...' : '提交推荐' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" v-if="result">
+                <div class="card-head">
+                    <div class="card-title"><span class="dot"></span>推荐结果</div>
+                    <span class="badge" :class="result.exists ? 'badge-warn' : 'badge-success'">
+                        {{ result.exists ? '馆藏已存在' : '已提交审核' }}
+                    </span>
+                </div>
+                <div class="card-body">
+                    <div class="alert" :class="result.exists ? 'alert-warn' : 'alert-success'">
+                        {{ result.message }}
+                    </div>
+
+                    <template v-if="result.exists">
+                        <div v-if="result.books && result.books.length" class="table-wrap">
+                            <table class="data-table">
+                                <thead>
+                                <tr>
+                                    <th>书名</th>
+                                    <th>作者</th>
+                                    <th>类型</th>
+                                    <th>出版社</th>
+                                    <th>可借天数</th>
+                                    <th>价格</th>
+                                    <th>可借库存</th>
+                                    <th>状态</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                <tr v-for="book in result.books" :key="book.id">
+                                    <td><b>{{ book.title }}</b></td>
+                                    <td>{{ book.author }}</td>
+                                    <td><span class="badge badge-info">{{ book.type }}</span></td>
+                                    <td>{{ book.publisher || '—' }}</td>
+                                    <td>{{ book.days }} 天</td>
+                                    <td>¥{{ Number(book.price || 0).toFixed(2) }}</td>
+                                    <td>{{ book.stock }}</td>
+                                    <td><span class="badge" :class="Lib.statusClass(book.status)">{{ book.status }}</span></td>
+                                </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div v-else class="empty-state">
+                            <div class="empty-icon">📚</div>
+                            <div class="empty-text">馆藏中存在相似图书，但无法展示详细信息</div>
+                        </div>
+                    </template>
+
+                    <template v-else>
+                        <div class="profile-grid">
+                            <div class="profile-item">
+                                <div class="profile-label">推荐书名</div>
+                                <div class="profile-value">{{ result.recommend.bookName }}</div>
+                            </div>
+                            <div class="profile-item">
+                                <div class="profile-label">作者</div>
+                                <div class="profile-value">{{ result.recommend.author }}</div>
+                            </div>
+                            <div class="profile-item">
+                                <div class="profile-label">出版社</div>
+                                <div class="profile-value">{{ result.recommend.publisher || '—' }}</div>
+                            </div>
+                            <div class="profile-item">
+                                <div class="profile-label">审核状态</div>
+                                <div class="profile-value">
+                                    <span class="badge" :class="Lib.statusClass(result.recommend.status)">
+                                        {{ result.recommend.status }}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <div class="card-title"><span class="dot"></span>我的推荐记录</div>
+                    <button class="btn btn-ghost btn-sm" @click="loadMine" :disabled="mineLoading">刷新</button>
+                </div>
+                <div class="card-body">
+                    <div v-if="mineError" class="form-error">{{ mineError }}</div>
+                    <div v-if="mineLoading" class="loading"><span class="spinner"></span>加载推荐记录...</div>
+                    <div v-else-if="mine.length === 0" class="empty-state">
+                        <div class="empty-icon">✍️</div>
+                        <div class="empty-text">您还没有提交过图书推荐</div>
+                        <div class="empty-hint">填写上方信息即可提交推荐</div>
+                    </div>
+                    <div v-else class="table-wrap">
+                        <table class="data-table">
+                            <thead>
+                            <tr>
+                                <th>书名</th>
+                                <th>作者</th>
+                                <th>出版社</th>
+                                <th>参考价格</th>
+                                <th>状态</th>
+                                <th>驳回理由</th>
+                                <th>提交时间</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <tr v-for="item in mine" :key="item.id">
+                                <td><b>{{ item.bookName }}</b></td>
+                                <td>{{ item.author }}</td>
+                                <td>{{ item.publisher || '—' }}</td>
+                                <td>¥{{ Number(item.price || 0).toFixed(2) }}</td>
+                                <td><span class="badge" :class="Lib.statusClass(item.status)">{{ item.status }}</span></td>
+                                <td>{{ item.reason || '—' }}</td>
+                                <td class="text-muted">{{ Lib.fmt(item.createTime) }}</td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script src="vendor/vue.global.prod.js"></script>
+<script src="vendor/axios.min.js"></script>
+<script src="js/common.js"></script>
+<script>
+    const { createApp, ref, onMounted } = Vue;
+
+    function blankForm() {
+        return { bookName: '', author: '', publisher: '', price: 0 };
+    }
+
+    createApp({
+        setup() {
+            const me = ref(null);
+            const form = ref(blankForm());
+            const checking = ref(false);
+            const error = ref('');
+            const result = ref(null);
+
+            const mine = ref([]);
+            const mineLoading = ref(false);
+            const mineError = ref('');
+
+            function resetForm() {
+                form.value = blankForm();
+                error.value = '';
+                result.value = null;
+            }
+
+            async function submit() {
+                error.value = '';
+                result.value = null;
+                if (!form.value.bookName) { error.value = '请输入书名'; return; }
+                if (!form.value.author) { error.value = '请输入作者'; return; }
+                if (form.value.price === null || form.value.price === '' || Number(form.value.price) < 0) {
+                    error.value = '参考价格不能为负数'; return;
+                }
+                checking.value = true;
+                try {
+                    const res = await Lib.post('/recommend/check', form.value);
+                    const data = res.data || {};
+                    result.value = {
+                        exists: !!data.exists,
+                        message: data.message || (data.exists ? '馆藏中已存在相似图书，未提交推荐。' : '推荐已提交，等待管理员审核。'),
+                        books: data.books || [],
+                        recommend: data.recommend || null
+                    };
+                    if (data.exists) {
+                        Lib.toast('馆藏中已存在相似图书，未提交推荐', 'warn');
+                    } else {
+                        Lib.toast('推荐已提交，等待审核');
+                        form.value = blankForm();
+                        await loadMine();
+                    }
+                } catch (e) {
+                    error.value = Lib.errorMessage(e);
+                } finally {
+                    checking.value = false;
+                }
+            }
+
+            async function loadMine() {
+                mineLoading.value = true;
+                mineError.value = '';
+                try {
+                    const res = await Lib.get('/recommend/mine');
+                    mine.value = res.data || [];
+                } catch (e) {
+                    mineError.value = Lib.errorMessage(e);
+                    mine.value = [];
+                } finally {
+                    mineLoading.value = false;
+                }
+            }
+
+            function doLogout() {
+                Lib.logout();
+            }
+
+            onMounted(async function () {
+                me.value = await Lib.initPage('推荐图书');
+                await loadMine();
+            });
+
+            return {
+                me, form, checking, error, result,
+                mine, mineLoading, mineError,
+                submit, resetForm, loadMine, doLogout, Lib
+            };
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>

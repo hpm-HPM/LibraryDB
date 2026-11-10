@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>借书 - 图书馆管理系统</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app" v-cloak>
+    <header class="topbar">
+        <div class="brand">
+            <span class="logo">图</span>
+            <div>图书馆管理系统 <small>LibraryWeb2026</small></div>
+        </div>
+        <div class="top-user" v-if="me">
+            <span class="role-badge" :class="Lib.roleClass(me.role)">{{ me.role }}</span>
+            <span>{{ me.name }}</span>
+            <button class="btn btn-ghost btn-sm" @click="doLogout">退出登录</button>
+        </div>
+    </header>
+
+    <div class="layout">
+        <aside class="sidebar" id="sidebar"></aside>
+        <main class="main">
+            <div class="page-head">
+                <div>
+                    <h1 class="page-title">借书</h1>
+                    <div class="page-sub">从可借图书中选择图书办理借阅，借阅记录会立即出现在下方。</div>
+                </div>
+                <span class="badge badge-info">借书</span>
+            </div>
+
+            <div class="stat-grid">
+                <div class="stat-card">
+                    <div class="stat-value">{{ loans.length }}</div>
+                    <div class="stat-label">我的未还记录</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{{ books.length }}</div>
+                    <div class="stat-label">当前可借图书（种）</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">5</div>
+                    <div class="stat-label">单次最多可借（本）</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <div class="card-title"><span class="dot"></span>我的未还借阅记录</div>
+                    <span class="text-muted">共 {{ loans.length }} 条</span>
+                </div>
+                <div class="card-body">
+                    <div v-if="loanError" class="form-error">{{ loanError }}</div>
+                    <div v-if="loanLoading" class="loading"><span class="spinner"></span>加载借阅记录...</div>
+                    <div v-else-if="loans.length === 0" class="empty-state">
+                        <div class="empty-icon">📖</div>
+                        <div class="empty-text">暂无未归还的借阅记录</div>
+                        <div class="empty-hint">从下方可借图书列表中选择图书办理借阅</div>
+                    </div>
+                    <div v-else class="table-wrap">
+                        <table class="data-table">
+                            <thead>
+                            <tr>
+                                <th>书名</th>
+                                <th>作者</th>
+                                <th>副本 ID</th>
+                                <th>借阅日期</th>
+                                <th>应还日期</th>
+                                <th>状态</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <tr v-for="loan in loans" :key="loan.id">
+                                <td><b>{{ loan.bookTitle }}</b></td>
+                                <td>{{ loan.bookAuthor || '—' }}</td>
+                                <td class="mono">{{ loan.bookCopyId }}</td>
+                                <td>{{ Lib.fmt(loan.borrowDate) }}</td>
+                                <td :class="{ 'text-danger': Lib.isOverdue(loan) }">
+                                    {{ Lib.fmt(loan.dueDate) }}
+                                    <span v-if="Lib.isOverdue(loan)" class="badge badge-danger">已逾期</span>
+                                </td>
+                                <td>
+                                    <span class="badge" :class="Lib.statusClass(Lib.loanStatus(loan))">
+                                        {{ Lib.loanStatus(loan) }}
+                                    </span>
+                                </td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <div class="card-title"><span class="dot"></span>可借图书</div>
+                    <span class="text-muted">库存大于 0 且状态正常的图书</span>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        借期以图书的“可借天数”为准，应还日期从借阅当天开始计算；请按时归还，逾期将按每天 1.5 元计费。
+                    </div>
+                    <div v-if="bookError" class="form-error">{{ bookError }}</div>
+                    <div v-if="bookLoading" class="loading"><span class="spinner"></span>加载可借图书...</div>
+                    <div v-else-if="books.length === 0" class="empty-state">
+                        <div class="empty-icon">📚</div>
+                        <div class="empty-text">当前没有可借图书</div>
+                        <div class="empty-hint">请稍后再来，或联系图书馆工作人员</div>
+                    </div>
+                    <div v-else class="table-wrap">
+                        <table class="data-table">
+                            <thead>
+                            <tr>
+                                <th>书名</th>
+                                <th>作者</th>
+                                <th>类型</th>
+                                <th>出版社</th>
+                                <th>可借天数</th>
+                                <th>价格</th>
+                                <th>可借库存</th>
+                                <th style="width:100px;">操作</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <tr v-for="book in books" :key="book.id">
+                                <td><b>{{ book.title }}</b></td>
+                                <td>{{ book.author }}</td>
+                                <td><span class="badge badge-info">{{ book.type }}</span></td>
+                                <td>{{ book.publisher || '—' }}</td>
+                                <td>{{ book.days }} 天</td>
+                                <td>¥{{ Number(book.price || 0).toFixed(2) }}</td>
+                                <td><b>{{ book.stock }}</b></td>
+                                <td>
+                                    <button class="btn btn-primary btn-sm" :disabled="borrowingId === book.id"
+                                            @click="borrow(book)">
+                                        {{ borrowingId === book.id ? '办理中...' : '借阅' }}
+                                    </button>
+                                </td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script src="vendor/vue.global.prod.js"></script>
+<script src="vendor/axios.min.js"></script>
+<script src="js/common.js"></script>
+<script>
+    const { createApp, ref, onMounted } = Vue;
+
+    createApp({
+        setup() {
+            const me = ref(null);
+            const loans = ref([]);
+            const books = ref([]);
+            const loanLoading = ref(false);
+            const bookLoading = ref(false);
+            const loanError = ref('');
+            const bookError = ref('');
+            const borrowingId = ref('');
+
+            async function loadLoans() {
+                loanLoading.value = true;
+                loanError.value = '';
+                try {
+                    const res = await Lib.get('/loans/my', { filter: 'unreturned' });
+                    loans.value = res.data || [];
+                } catch (e) {
+                    loanError.value = Lib.errorMessage(e);
+                    loans.value = [];
+                } finally {
+                    loanLoading.value = false;
+                }
+            }
+
+            async function loadBooks() {
+                bookLoading.value = true;
+                bookError.value = '';
+                try {
+                    const res = await Lib.get('/books/borrowable');
+                    books.value = res.data || [];
+                } catch (e) {
+                    bookError.value = Lib.errorMessage(e);
+                    books.value = [];
+                } finally {
+                    bookLoading.value = false;
+                }
+            }
+
+            async function borrow(book) {
+                if (!confirm('确定要借阅《' + book.title + '》吗？')) return;
+                borrowingId.value = book.id;
+                try {
+                    await Lib.post('/loans/borrow', { bookId: book.id });
+                    Lib.toast('借阅成功，借阅记录已更新');
+                    await Promise.all([loadLoans(), loadBooks()]);
+                } catch (e) {
+                    Lib.toast(Lib.errorMessage(e), 'error');
+                } finally {
+                    borrowingId.value = '';
+                }
+            }
+
+            function doLogout() {
+                Lib.logout();
+            }
+
+            onMounted(async function () {
+                me.value = await Lib.initPage('借书');
+                await Promise.all([loadLoans(), loadBooks()]);
+            });
+
+            return {
+                me, loans, books, loanLoading, bookLoading, loanError, bookError, borrowingId,
+                borrow, doLogout, Lib
+            };
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>

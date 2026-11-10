@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的借阅 - 图书馆管理系统</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app" v-cloak>
+    <header class="topbar">
+        <div class="brand">
+            <span class="logo">图</span>
+            <div>图书馆管理系统 <small>LibraryWeb2026</small></div>
+        </div>
+        <div class="top-user" v-if="me">
+            <span class="role-badge" :class="Lib.roleClass(me.role)">{{ me.role }}</span>
+            <span>{{ me.name }}</span>
+            <button class="btn btn-ghost btn-sm" @click="doLogout">退出登录</button>
+        </div>
+    </header>
+
+    <div class="layout">
+        <aside class="sidebar" id="sidebar"></aside>
+        <main class="main">
+            <div class="page-head">
+                <div>
+                    <h1 class="page-title">我的借阅</h1>
+                    <div class="page-sub">查询本人的全部借阅记录、未归还记录或指定借阅日期范围内的记录。</div>
+                </div>
+                <span class="badge badge-info">个人借阅查询</span>
+            </div>
+
+            <div class="stat-grid">
+                <div class="stat-card">
+                    <div class="stat-value">{{ total }}</div>
+                    <div class="stat-label">当前查询记录</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{{ unreturnedCount }}</div>
+                    <div class="stat-label">其中未归还</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{{ returnedCount }}</div>
+                    <div class="stat-label">其中已归还</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <div class="card-title"><span class="dot"></span>借阅记录查询</div>
+                    <span class="text-muted">按借阅日期筛选</span>
+                </div>
+                <div class="card-body">
+                    <div class="tabs">
+                        <div class="tab" :class="{ active: tab === 'all' }" @click="switchTab('all')">全部记录</div>
+                        <div class="tab" :class="{ active: tab === 'unreturned' }" @click="switchTab('unreturned')">未归还</div>
+                        <div class="tab" :class="{ active: tab === 'range' }" @click="switchTab('range')">日期范围</div>
+                    </div>
+
+                    <div v-if="tab === 'range'" class="form-grid" style="margin-bottom:14px;">
+                        <div class="field">
+                            <label>开始日期</label>
+                            <input class="input" type="date" v-model="start">
+                        </div>
+                        <div class="field">
+                            <label>结束日期</label>
+                            <input class="input" type="date" v-model="end">
+                        </div>
+                        <div class="field field-full" style="display:flex;gap:10px;">
+                            <button class="btn btn-primary" @click="load" :disabled="loading">查询</button>
+                            <button class="btn btn-ghost" @click="resetRange">重置</button>
+                        </div>
+                    </div>
+
+                    <div v-if="error" class="form-error">{{ error }}</div>
+
+                    <div v-if="loading" class="loading"><span class="spinner"></span>正在查询借阅记录...</div>
+
+                    <div v-else-if="loans.length === 0" class="empty-state">
+                        <div class="empty-icon">🗂️</div>
+                        <div class="empty-text">没有查询到借阅记录</div>
+                        <div class="empty-hint">可切换查询条件后重试</div>
+                    </div>
+
+                    <div v-else class="table-wrap">
+                        <table class="data-table">
+                            <thead>
+                            <tr>
+                                <th>书名</th>
+                                <th>作者</th>
+                                <th>类型</th>
+                                <th>副本 ID</th>
+                                <th>借阅日期</th>
+                                <th>应还日期</th>
+                                <th>归还日期</th>
+                                <th>状态</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <tr v-for="loan in loans" :key="loan.id">
+                                <td><b>{{ loan.bookTitle }}</b></td>
+                                <td>{{ loan.bookAuthor || '—' }}</td>
+                                <td><span class="badge badge-info">{{ loan.bookType || '—' }}</span></td>
+                                <td class="mono">{{ loan.bookCopyId }}</td>
+                                <td>{{ Lib.fmt(loan.borrowDate) }}</td>
+                                <td :class="{ 'text-danger': Lib.isOverdue(loan) }">{{ Lib.fmt(loan.dueDate) }}</td>
+                                <td>{{ loan.returnDate ? Lib.fmt(loan.returnDate) : '—' }}</td>
+                                <td>
+                                    <span class="badge" :class="Lib.statusClass(Lib.loanStatus(loan))">
+                                        {{ Lib.loanStatus(loan) }}
+                                    </span>
+                                </td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script src="vendor/vue.global.prod.js"></script>
+<script src="vendor/axios.min.js"></script>
+<script src="js/common.js"></script>
+<script>
+    const { createApp, ref, computed, onMounted } = Vue;
+
+    function monthStart() {
+        const now = new Date();
+        return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-01';
+    }
+
+    createApp({
+        setup() {
+            const me = ref(null);
+            const tab = ref('all');
+            const start = ref(monthStart());
+            const end = ref(Lib.today());
+            const loans = ref([]);
+            const loading = ref(false);
+            const error = ref('');
+
+            const total = computed(function () { return loans.value.length; });
+            const returnedCount = computed(function () {
+                return loans.value.filter(function (loan) { return Lib.loanStatus(loan) === '已还'; }).length;
+            });
+            const unreturnedCount = computed(function () { return total.value - returnedCount.value; });
+
+            async function load() {
+                error.value = '';
+                if (tab.value === 'range') {
+                    if (!start.value || !end.value) {
+                        error.value = '请选择开始日期和结束日期';
+                        return;
+                    }
+                    if (start.value > end.value) {
+                        error.value = '开始日期不能晚于结束日期';
+                        return;
+                    }
+                }
+                loading.value = true;
+                try {
+                    const params = { filter: tab.value === 'unreturned' ? 'unreturned' : 'all' };
+                    if (tab.value === 'range') {
+                        params.start = start.value;
+                        params.end = end.value;
+                    }
+                    const res = await Lib.get('/loans/my', params);
+                    loans.value = res.data || [];
+                } catch (e) {
+                    error.value = Lib.errorMessage(e);
+                    loans.value = [];
+                } finally {
+                    loading.value = false;
+                }
+            }
+
+            function switchTab(next) {
+                if (tab.value === next) return;
+                tab.value = next;
+                if (next === 'range') {
+                    if (!start.value) start.value = monthStart();
+                    if (!end.value) end.value = Lib.today();
+                }
+                load();
+            }
+
+            function resetRange() {
+                start.value = monthStart();
+                end.value = Lib.today();
+                load();
+            }
+
+            function doLogout() {
+                Lib.logout();
+            }
+
+            onMounted(async function () {
+                me.value = await Lib.initPage('我的借阅');
+                await load();
+            });
+
+            return {
+                me, tab, start, end, loans, loading, error,
+                total, returnedCount, unreturnedCount,
+                load, switchTab, resetRange, doLogout, Lib
+            };
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>

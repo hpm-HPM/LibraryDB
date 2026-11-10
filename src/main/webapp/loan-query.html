@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>借阅记录查询 - 图书馆管理系统</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app" v-cloak>
+    <header class="topbar">
+        <div class="brand">
+            <span class="logo">图</span>
+            <div>图书馆管理系统 <small>LibraryWeb2026</small></div>
+        </div>
+        <div class="top-user" v-if="me">
+            <span class="role-badge" :class="Lib.roleClass(me.role)">{{ me.role }}</span>
+            <span>{{ me.name }}</span>
+            <button class="btn btn-ghost btn-sm" @click="doLogout">退出登录</button>
+        </div>
+    </header>
+
+    <div class="layout">
+        <aside class="sidebar" id="sidebar"></aside>
+        <main class="main">
+            <div class="page-head">
+                <div>
+                    <h1 class="page-title">借阅记录查询</h1>
+                    <div class="page-sub">支持按读者姓名/书名模糊查询、超期借阅查询以及借阅日期范围查询。</div>
+                </div>
+                <span class="badge badge-info">管理员</span>
+            </div>
+
+            <div class="stat-grid">
+                <div class="stat-card">
+                    <div class="stat-value">{{ loans.length }}</div>
+                    <div class="stat-label">查询结果（条）</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{{ unreturnedCount }}</div>
+                    <div class="stat-label">其中未归还</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{{ overdueCount }}</div>
+                    <div class="stat-label">其中已超期</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <div class="card-title"><span class="dot"></span>查询条件</div>
+                    <span class="text-muted">三种查询方式</span>
+                </div>
+                <div class="card-body">
+                    <div class="tabs">
+                        <div class="tab" :class="{ active: mode === 'keyword' }" @click="switchMode('keyword')">关键字查询</div>
+                        <div class="tab" :class="{ active: mode === 'overdue' }" @click="switchMode('overdue')">超期借阅查询</div>
+                        <div class="tab" :class="{ active: mode === 'range' }" @click="switchMode('range')">借阅日期范围</div>
+                    </div>
+
+                    <div class="form-grid" style="margin-bottom:4px;">
+                        <div class="field" v-if="mode !== 'range'">
+                            <label>{{ mode === 'overdue' ? '关键字（可选）' : '关键字' }}</label>
+                            <input class="input" v-model.trim="keyword" maxlength="30"
+                                   :placeholder="mode === 'overdue' ? '读者姓名或书名，可留空查全部超期' : '读者姓名或书名'">
+                        </div>
+                        <template v-if="mode === 'range'">
+                            <div class="field">
+                                <label>开始日期<span class="required">*</span></label>
+                                <input class="input" type="date" v-model="start">
+                            </div>
+                            <div class="field">
+                                <label>结束日期<span class="required">*</span></label>
+                                <input class="input" type="date" v-model="end">
+                            </div>
+                        </template>
+                        <div class="field field-full" style="display:flex;gap:10px;align-items:flex-end;">
+                            <button class="btn btn-primary" @click="load" :disabled="loading">
+                                {{ loading ? '查询中...' : '查询' }}
+                            </button>
+                            <button class="btn btn-ghost" @click="reset">重置</button>
+                        </div>
+                    </div>
+
+                    <div v-if="error" class="form-error">{{ error }}</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <div class="card-title"><span class="dot"></span>借阅记录</div>
+                    <span class="text-muted">按借阅日期倒序</span>
+                </div>
+                <div class="card-body">
+                    <div v-if="loading" class="loading"><span class="spinner"></span>正在查询借阅记录...</div>
+                    <div v-else-if="loans.length === 0" class="empty-state">
+                        <div class="empty-icon">🔎</div>
+                        <div class="empty-text">没有查询到借阅记录</div>
+                        <div class="empty-hint">可更换关键字或调整日期范围后重试</div>
+                    </div>
+                    <div v-else class="table-wrap">
+                        <table class="data-table">
+                            <thead>
+                            <tr>
+                                <th>读者</th>
+                                <th>角色</th>
+                                <th>专业</th>
+                                <th>书名</th>
+                                <th>副本 ID</th>
+                                <th>借阅日期</th>
+                                <th>应还日期</th>
+                                <th>归还日期</th>
+                                <th>状态</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <tr v-for="loan in loans" :key="loan.id">
+                                <td><b>{{ loan.userName }}</b></td>
+                                <td>
+                                    <span class="role-badge" :class="Lib.roleClass(loan.userRole)">{{ loan.userRole }}</span>
+                                </td>
+                                <td>{{ loan.userMajor || '—' }}</td>
+                                <td>{{ loan.bookTitle }}</td>
+                                <td class="mono">{{ loan.bookCopyId }}</td>
+                                <td>{{ Lib.fmt(loan.borrowDate) }}</td>
+                                <td :class="{ 'text-danger': Lib.isOverdue(loan) }">
+                                    {{ Lib.fmt(loan.dueDate) }}
+                                    <span v-if="Lib.isOverdue(loan)" class="badge badge-danger">超期</span>
+                                </td>
+                                <td>{{ loan.returnDate ? Lib.fmt(loan.returnDate) : '—' }}</td>
+                                <td>
+                                    <span class="badge" :class="Lib.statusClass(Lib.loanStatus(loan))">
+                                        {{ Lib.loanStatus(loan) }}
+                                    </span>
+                                </td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script src="vendor/vue.global.prod.js"></script>
+<script src="vendor/axios.min.js"></script>
+<script src="js/common.js"></script>
+<script>
+    const { createApp, ref, computed, onMounted } = Vue;
+
+    function monthStart() {
+        const now = new Date();
+        return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-01';
+    }
+
+    createApp({
+        setup() {
+            const me = ref(null);
+            const mode = ref('keyword');
+            const keyword = ref('');
+            const start = ref(monthStart());
+            const end = ref(Lib.today());
+            const loans = ref([]);
+            const loading = ref(false);
+            const error = ref('');
+
+            const unreturnedCount = computed(function () {
+                return loans.value.filter(function (loan) { return Lib.loanStatus(loan) !== '已还'; }).length;
+            });
+            const overdueCount = computed(function () {
+                return loans.value.filter(function (loan) { return Lib.isOverdue(loan); }).length;
+            });
+
+            async function load() {
+                error.value = '';
+                if (mode.value === 'range') {
+                    if (!start.value || !end.value) {
+                        error.value = '请选择完整的开始日期和结束日期';
+                        return;
+                    }
+                    if (start.value > end.value) {
+                        error.value = '开始日期不能晚于结束日期';
+                        return;
+                    }
+                }
+                loading.value = true;
+                try {
+                    const params = { mode: mode.value, keyword: keyword.value };
+                    if (mode.value === 'range') {
+                        params.start = start.value;
+                        params.end = end.value;
+                    }
+                    const res = await Lib.get('/loans/search', params);
+                    loans.value = res.data || [];
+                } catch (e) {
+                    error.value = Lib.errorMessage(e);
+                    loans.value = [];
+                } finally {
+                    loading.value = false;
+                }
+            }
+
+            function switchMode(next) {
+                if (mode.value === next) return;
+                mode.value = next;
+                error.value = '';
+                load();
+            }
+
+            function reset() {
+                keyword.value = '';
+                start.value = monthStart();
+                end.value = Lib.today();
+                error.value = '';
+                load();
+            }
+
+            function doLogout() {
+                Lib.logout();
+            }
+
+            onMounted(async function () {
+                me.value = await Lib.initPage('借阅查询');
+                await load();
+            });
+
+            return {
+                me, mode, keyword, start, end, loans, loading, error,
+                unreturnedCount, overdueCount,
+                load, switchMode, reset, doLogout, Lib
+            };
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>

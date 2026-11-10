@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>首页 - 图书馆管理系统</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app" v-cloak>
+    <header class="topbar">
+        <div class="brand">
+            <span class="logo">图</span>
+            <div>图书馆管理系统 <small>LibraryWeb2026</small></div>
+        </div>
+        <div class="top-user" v-if="me">
+            <span class="role-badge" :class="Lib.roleClass(me.role)">{{ me.role }}</span>
+            <span>{{ me.name }}</span>
+            <button class="btn btn-ghost btn-sm" @click="doLogout">退出登录</button>
+        </div>
+    </header>
+
+    <div class="layout">
+        <aside class="sidebar" id="sidebar"></aside>
+        <main class="main">
+            <div class="page-head">
+                <div>
+                    <h1 class="page-title">{{ greeting }}，{{ me ? me.name : '' }}</h1>
+                    <div class="page-sub">欢迎使用图书馆管理系统，下面是根据您的角色开放的功能入口。</div>
+                </div>
+                <div class="text-muted" v-if="me">最近登录：{{ Lib.fmt(me.loginTime) }}</div>
+            </div>
+
+            <div v-if="!me" class="loading"><span class="spinner"></span>正在加载个人信息...</div>
+
+            <template v-else>
+                <div class="profile-card">
+                    <div class="avatar">{{ me.name ? me.name.charAt(0) : '图' }}</div>
+                    <div class="profile-main">
+                        <div class="profile-name">
+                            {{ me.name }}
+                            <span class="role-badge">{{ me.role }}</span>
+                        </div>
+                        <div class="profile-meta">
+                            {{ me.major || '未填写专业' }} · {{ me.phone || '未填写手机号' }}
+                        </div>
+                        <div class="profile-meta">账号创建于 {{ Lib.fmt(me.createTime) }}</div>
+                    </div>
+                    <div class="profile-stats">
+                        <div class="profile-stat">
+                            <b>{{ me.permissions ? me.permissions.length : 0 }}</b>
+                            <span>可用功能</span>
+                        </div>
+                        <div class="profile-stat">
+                            <b>{{ features.length }}</b>
+                            <span>功能入口</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-head">
+                        <div class="card-title"><span class="dot"></span>个人资料</div>
+                        <span class="badge badge-muted">{{ me.role }}</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="profile-grid">
+                            <div class="profile-item">
+                                <div class="profile-label">姓名</div>
+                                <div class="profile-value">{{ me.name }}</div>
+                            </div>
+                            <div class="profile-item">
+                                <div class="profile-label">角色</div>
+                                <div class="profile-value">{{ me.role }}</div>
+                            </div>
+                            <div class="profile-item">
+                                <div class="profile-label">手机号</div>
+                                <div class="profile-value">{{ me.phone || '—' }}</div>
+                            </div>
+                            <div class="profile-item">
+                                <div class="profile-label">专业</div>
+                                <div class="profile-value">{{ me.major || '—' }}</div>
+                            </div>
+                            <div class="profile-item" v-for="item in roleInfo" :key="item.label">
+                                <div class="profile-label">{{ item.label }}</div>
+                                <div class="profile-value">{{ item.value }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-head">
+                        <div class="card-title"><span class="dot"></span>功能入口</div>
+                        <span class="text-muted">按角色权限展示</span>
+                    </div>
+                    <div class="card-body">
+                        <div v-if="features.length === 0" class="empty-state">
+                            <div class="empty-icon">🔒</div>
+                            <div class="empty-text">当前角色暂未分配功能权限</div>
+                        </div>
+                        <div v-else class="feature-grid">
+                            <div class="feature-card" v-for="feature in features" :key="feature.href">
+                                <div class="feature-icon">{{ feature.icon }}</div>
+                                <div class="feature-title">{{ feature.title }}</div>
+                                <div class="feature-desc">{{ feature.desc }}</div>
+                                <a class="feature-link" :href="feature.href">进入功能 →</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-head">
+                        <div class="card-title"><span class="dot"></span>借阅规则</div>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info mb-0">
+                            每位读者单次最多可借 5 本图书，借期以图书信息中的可借天数为准；逾期归还按每天 1.5 元计费。
+                            请按时归还，保持图书完好。
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </main>
+    </div>
+</div>
+
+<script src="vendor/vue.global.prod.js"></script>
+<script src="vendor/axios.min.js"></script>
+<script src="js/common.js"></script>
+<script>
+    const { createApp, ref, computed, onMounted } = Vue;
+
+    const FEATURES = {
+        '用户信息查询': { icon: '👤', title: '用户信息查询', href: 'users.html', desc: '按姓名、手机号或专业模糊查询用户，查看角色与扩展资料。' },
+        '借阅记录查询': { icon: '🔎', title: '借阅记录查询', href: 'loan-query.html', desc: '按关键字、超期状态或借阅日期范围检索全部借阅记录。' },
+        '借阅数据统计': { icon: '📊', title: '借阅数据统计', href: 'stats.html', desc: '按图书类型、读者专业统计借阅次数，掌握馆藏使用情况。' },
+        '添加书籍': { icon: '📚', title: '图书管理', href: 'books.html', desc: '添加、编辑、废弃图书，维护图书副本与库存信息。' },
+        '查看所有书籍': { icon: '📚', title: '图书管理', href: 'books.html', desc: '查看馆藏图书，检索书名、作者、类型和出版社。' },
+        '废弃图书': { icon: '📚', title: '图书管理', href: 'books.html', desc: '对满足条件的图书执行废弃，同时保留历史借阅记录。' },
+        '编辑图书': { icon: '📚', title: '图书管理', href: 'books.html', desc: '编辑图书的基本信息、可借天数、价格与简介。' },
+        '图书副本编辑': { icon: '📚', title: '图书管理', href: 'books.html', desc: '新增或删除图书副本，系统自动同步可借库存。' },
+        '借书': { icon: '📖', title: '借书', href: 'borrow.html', desc: '查看可借图书和自己的未还记录，按图书办理借阅。' },
+        '还书': { icon: '↩️', title: '还书', href: 'return.html', desc: '查看本人未归还记录，按图书副本办理归还。' },
+        '个人借阅查询': { icon: '🗂️', title: '我的借阅', href: 'my-loans.html', desc: '查询本人全部、未还或指定日期范围内的借阅记录。' },
+        '推荐图书': { icon: '✍️', title: '推荐图书', href: 'recommend.html', desc: '提交馆藏没有的图书推荐，系统自动进入待审核状态。' },
+        '审阅推荐图书': { icon: '✅', title: '审阅推荐', href: 'review.html', desc: '审阅教师提交的图书推荐，通过后自动加入馆藏。' }
+    };
+
+    createApp({
+        setup() {
+            const me = ref(null);
+
+            const greeting = computed(function () {
+                const hour = new Date().getHours();
+                if (hour < 6) return '夜深了';
+                if (hour < 12) return '上午好';
+                if (hour < 14) return '中午好';
+                if (hour < 18) return '下午好';
+                return '晚上好';
+            });
+
+            const features = computed(function () {
+                const permissions = (me.value && me.value.permissions) || [];
+                const seen = [];
+                const result = [];
+                permissions.forEach(function (permission) {
+                    const feature = FEATURES[permission];
+                    if (feature && seen.indexOf(feature.href) < 0) {
+                        seen.push(feature.href);
+                        result.push(feature);
+                    }
+                });
+                return result;
+            });
+
+            const roleInfo = computed(function () {
+                const user = me.value;
+                if (!user) return [];
+                if (user.role === '管理员') {
+                    return [
+                        { label: '权限等级', value: user.permissionLevel || '—' },
+                        { label: '入职日期', value: Lib.fmtDate(user.entryTime) }
+                    ];
+                }
+                if (user.role === '操作员') {
+                    return [
+                        { label: '工作区域', value: user.area || '—' },
+                        { label: '工作职责', value: user.duty || '—' }
+                    ];
+                }
+                if (user.role === '教师') {
+                    return [
+                        { label: '所属学院', value: user.college || '—' },
+                        { label: '职称', value: user.title || '—' }
+                    ];
+                }
+                return [
+                    { label: '年级', value: user.grade || '—' },
+                    { label: '所属学院', value: user.college || '—' }
+                ];
+            });
+
+            function doLogout() {
+                Lib.logout();
+            }
+
+            onMounted(async function () {
+                me.value = await Lib.initPage('首页');
+            });
+
+            return { me, greeting, features, roleInfo, doLogout, Lib };
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>

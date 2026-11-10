@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>图书馆管理系统</title>
+</head>
+<body>
+<script>
+    fetch('api/auth/me')
+        .then(function (response) { return response.json(); })
+        .then(function (body) {
+            location.replace(body && body.data ? 'home.html' : 'login.html');
+        })
+        .catch(function () {
+            location.replace('login.html');
+        });
+</script>
+</body>
+</html>

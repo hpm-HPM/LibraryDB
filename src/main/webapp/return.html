@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>还书 - 图书馆管理系统</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app" v-cloak>
+    <header class="topbar">
+        <div class="brand">
+            <span class="logo">图</span>
+            <div>图书馆管理系统 <small>LibraryWeb2026</small></div>
+        </div>
+        <div class="top-user" v-if="me">
+            <span class="role-badge" :class="Lib.roleClass(me.role)">{{ me.role }}</span>
+            <span>{{ me.name }}</span>
+            <button class="btn btn-ghost btn-sm" @click="doLogout">退出登录</button>
+        </div>
+    </header>
+
+    <div class="layout">
+        <aside class="sidebar" id="sidebar"></aside>
+        <main class="main">
+            <div class="page-head">
+                <div>
+                    <h1 class="page-title">还书</h1>
+                    <div class="page-sub">选择本人未归还的借阅记录，按图书副本办理归还。</div>
+                </div>
+                <span class="badge badge-info">还书</span>
+            </div>
+
+            <div class="stat-grid">
+                <div class="stat-card">
+                    <div class="stat-value">{{ loans.length }}</div>
+                    <div class="stat-label">未归还记录</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{{ overdueCount }}</div>
+                    <div class="stat-label">其中已逾期</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">1.5</div>
+                    <div class="stat-label">逾期费（元/天）</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <div class="card-title"><span class="dot"></span>我的未归还记录</div>
+                    <span class="text-muted">归还后记录会从本列表消失，可继续归还其他图书</span>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        请核对图书副本后再归还。归还成功后，该副本恢复为可借状态，图书可借库存自动 +1。
+                    </div>
+                    <div v-if="error" class="form-error">{{ error }}</div>
+                    <div v-if="loading" class="loading"><span class="spinner"></span>加载未归还记录...</div>
+                    <div v-else-if="loans.length === 0" class="empty-state">
+                        <div class="empty-icon">✅</div>
+                        <div class="empty-text">当前没有需要归还的图书</div>
+                        <div class="empty-hint">您已归还全部借阅图书</div>
+                    </div>
+                    <div v-else class="table-wrap">
+                        <table class="data-table">
+                            <thead>
+                            <tr>
+                                <th>书名</th>
+                                <th>作者</th>
+                                <th>副本 ID</th>
+                                <th>借阅日期</th>
+                                <th>应还日期</th>
+                                <th>状态</th>
+                                <th>预计逾期费</th>
+                                <th style="width:100px;">操作</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <tr v-for="loan in loans" :key="loan.id">
+                                <td><b>{{ loan.bookTitle }}</b></td>
+                                <td>{{ loan.bookAuthor || '—' }}</td>
+                                <td class="mono">{{ loan.bookCopyId }}</td>
+                                <td>{{ Lib.fmt(loan.borrowDate) }}</td>
+                                <td :class="{ 'text-danger': Lib.isOverdue(loan) }">{{ Lib.fmt(loan.dueDate) }}</td>
+                                <td>
+                                    <span class="badge" :class="Lib.statusClass(Lib.loanStatus(loan))">
+                                        {{ Lib.loanStatus(loan) }}
+                                    </span>
+                                </td>
+                                <td :class="{ 'text-danger': Lib.isOverdue(loan) }">
+                                    {{ Lib.isOverdue(loan) ? '¥' + fine(loan) : '—' }}
+                                </td>
+                                <td>
+                                    <button class="btn btn-success btn-sm" :disabled="returningId === loan.id"
+                                            @click="returnBook(loan)">
+                                        {{ returningId === loan.id ? '办理中...' : '归还' }}
+                                    </button>
+                                </td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script src="vendor/vue.global.prod.js"></script>
+<script src="vendor/axios.min.js"></script>
+<script src="js/common.js"></script>
+<script>
+    const { createApp, ref, computed, onMounted } = Vue;
+
+    createApp({
+        setup() {
+            const me = ref(null);
+            const loans = ref([]);
+            const loading = ref(false);
+            const error = ref('');
+            const returningId = ref('');
+
+            const overdueCount = computed(function () {
+                return loans.value.filter(function (loan) { return Lib.isOverdue(loan); }).length;
+            });
+
+            function fine(loan) {
+                const due = Lib.parseTime(loan.dueDate);
+                if (!due) return '0.00';
+                const days = Math.max(0, Math.ceil((Date.now() - due.getTime()) / 86400000));
+                return (days * 1.5).toFixed(2);
+            }
+
+            async function loadLoans() {
+                loading.value = true;
+                error.value = '';
+                try {
+                    const res = await Lib.get('/loans/my', { filter: 'unreturned' });
+                    loans.value = res.data || [];
+                } catch (e) {
+                    error.value = Lib.errorMessage(e);
+                    loans.value = [];
+                } finally {
+                    loading.value = false;
+                }
+            }
+
+            async function returnBook(loan) {
+                if (!confirm('确定归还《' + loan.bookTitle + '》吗？\n副本 ID：' + loan.bookCopyId)) return;
+                returningId.value = loan.id;
+                try {
+                    await Lib.post('/loans/return', { copyId: loan.bookCopyId });
+                    Lib.toast('归还成功');
+                    await loadLoans();
+                } catch (e) {
+                    Lib.toast(Lib.errorMessage(e), 'error');
+                } finally {
+                    returningId.value = '';
+                }
+            }
+
+            function doLogout() {
+                Lib.logout();
+            }
+
+            onMounted(async function () {
+                me.value = await Lib.initPage('还书');
+                await loadLoans();
+            });
+
+            return { me, loans, loading, error, returningId, overdueCount, fine, returnBook, doLogout, Lib };
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>

@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>审阅推荐 - 图书馆管理系统</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app" v-cloak>
+    <header class="topbar">
+        <div class="brand">
+            <span class="logo">图</span>
+            <div>图书馆管理系统 <small>LibraryWeb2026</small></div>
+        </div>
+        <div class="top-user" v-if="me">
+            <span class="role-badge" :class="Lib.roleClass(me.role)">{{ me.role }}</span>
+            <span>{{ me.name }}</span>
+            <button class="btn btn-ghost btn-sm" @click="doLogout">退出登录</button>
+        </div>
+    </header>
+
+    <div class="layout">
+        <aside class="sidebar" id="sidebar"></aside>
+        <main class="main">
+            <div class="page-head">
+                <div>
+                    <h1 class="page-title">审阅推荐图书</h1>
+                    <div class="page-sub">审阅教师提交的图书推荐，通过后自动加入馆藏并生成图书副本。</div>
+                </div>
+                <button class="btn btn-outline" @click="load" :disabled="loading">刷新</button>
+            </div>
+
+            <div class="stat-grid">
+                <div class="stat-card">
+                    <div class="stat-value">{{ pending.length }}</div>
+                    <div class="stat-label">待审核推荐</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">1</div>
+                    <div class="stat-label">通过后默认库存</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">7</div>
+                    <div class="stat-label">通过后默认可借天数</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-head">
+                    <div class="card-title"><span class="dot"></span>待审核列表</div>
+                    <span class="text-muted">按提交时间倒序</span>
+                </div>
+                <div class="card-body">
+                    <div v-if="error" class="form-error">{{ error }}</div>
+                    <div v-if="loading" class="loading"><span class="spinner"></span>加载待审核推荐...</div>
+                    <div v-else-if="pending.length === 0" class="empty-state">
+                        <div class="empty-icon">✅</div>
+                        <div class="empty-text">暂无待审核的图书推荐</div>
+                        <div class="empty-hint">所有推荐均已处理</div>
+                    </div>
+                    <div v-else class="table-wrap">
+                        <table class="data-table">
+                            <thead>
+                            <tr>
+                                <th>推荐人</th>
+                                <th>书名</th>
+                                <th>作者</th>
+                                <th>出版社</th>
+                                <th>参考价格</th>
+                                <th>提交时间</th>
+                                <th style="min-width:150px;">操作</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <tr v-for="item in pending" :key="item.id">
+                                <td><b>{{ item.userName || '—' }}</b></td>
+                                <td>{{ item.bookName }}</td>
+                                <td>{{ item.author }}</td>
+                                <td>{{ item.publisher || '—' }}</td>
+                                <td>¥{{ Number(item.price || 0).toFixed(2) }}</td>
+                                <td class="text-muted">{{ Lib.fmt(item.createTime) }}</td>
+                                <td>
+                                    <div class="table-actions">
+                                        <button class="btn btn-success btn-sm" @click="openReview(item, 'approve')">通过</button>
+                                        <button class="btn btn-danger btn-sm" @click="openReview(item, 'reject')">驳回</button>
+                                    </div>
+                                </td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div class="modal-mask" v-if="modalOpen" @click.self="modalOpen = false">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="card-title">{{ mode === 'approve' ? '通过推荐' : '驳回推荐' }}</div>
+                <button class="modal-close" @click="modalOpen = false">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="profile-grid mb-16" v-if="current">
+                    <div class="profile-item">
+                        <div class="profile-label">推荐书名</div>
+                        <div class="profile-value">{{ current.bookName }}</div>
+                    </div>
+                    <div class="profile-item">
+                        <div class="profile-label">作者</div>
+                        <div class="profile-value">{{ current.author }}</div>
+                    </div>
+                    <div class="profile-item">
+                        <div class="profile-label">出版社</div>
+                        <div class="profile-value">{{ current.publisher || '—' }}</div>
+                    </div>
+                    <div class="profile-item">
+                        <div class="profile-label">推荐人</div>
+                        <div class="profile-value">{{ current.userName || '—' }}</div>
+                    </div>
+                </div>
+
+                <div v-if="modalError" class="form-error">{{ modalError }}</div>
+
+                <template v-if="mode === 'approve'">
+                    <div class="alert alert-info">
+                        通过后系统会自动创建图书，并按填写的库存生成对应数量的副本。
+                    </div>
+                    <div class="form-grid">
+                        <div class="field">
+                            <label>图书类型<span class="required">*</span></label>
+                            <input class="input" v-model.trim="form.type" maxlength="10" placeholder="如：计算机">
+                        </div>
+                        <div class="field">
+                            <label>可借天数<span class="required">*</span></label>
+                            <input class="input" type="number" min="1" v-model.number="form.days">
+                        </div>
+                        <div class="field">
+                            <label>初始库存（册）<span class="required">*</span></label>
+                            <input class="input" type="number" min="0" max="1000" v-model.number="form.stock">
+                        </div>
+                    </div>
+                </template>
+
+                <template v-else>
+                    <div class="field">
+                        <label>驳回理由<span class="required">*</span></label>
+                        <textarea class="textarea" rows="4" maxlength="100" v-model.trim="form.reason"
+                                  placeholder="请填写驳回理由，推荐人可在我的推荐记录中查看"></textarea>
+                    </div>
+                </template>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" @click="modalOpen = false">取消</button>
+                <button class="btn" :class="mode === 'approve' ? 'btn-success' : 'btn-danger'"
+                        @click="submitReview" :disabled="saving">
+                    {{ saving ? '处理中...' : (mode === 'approve' ? '确认通过' : '确认驳回') }}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="vendor/vue.global.prod.js"></script>
+<script src="vendor/axios.min.js"></script>
+<script src="js/common.js"></script>
+<script>
+    const { createApp, ref, onMounted } = Vue;
+
+    createApp({
+        setup() {
+            const me = ref(null);
+            const pending = ref([]);
+            const loading = ref(false);
+            const error = ref('');
+
+            const modalOpen = ref(false);
+            const mode = ref('approve');
+            const current = ref(null);
+            const form = ref({ type: '综合', days: 7, stock: 1, reason: '' });
+            const modalError = ref('');
+            const saving = ref(false);
+
+            async function load() {
+                loading.value = true;
+                error.value = '';
+                try {
+                    const res = await Lib.get('/recommend/pending');
+                    pending.value = res.data || [];
+                } catch (e) {
+                    error.value = Lib.errorMessage(e);
+                    pending.value = [];
+                } finally {
+                    loading.value = false;
+                }
+            }
+
+            function openReview(item, nextMode) {
+                current.value = item;
+                mode.value = nextMode;
+                form.value = {
+                    type: '综合',
+                    days: 7,
+                    stock: 1,
+                    reason: ''
+                };
+                modalError.value = '';
+                modalOpen.value = true;
+            }
+
+            async function submitReview() {
+                modalError.value = '';
+                if (mode.value === 'approve') {
+                    if (!form.value.type) { modalError.value = '请输入图书类型'; return; }
+                    if (!form.value.days || form.value.days <= 0) { modalError.value = '可借天数必须大于 0'; return; }
+                    if (form.value.stock === null || form.value.stock === '' ||
+                        Number(form.value.stock) < 0 || Number(form.value.stock) > 1000) {
+                        modalError.value = '初始库存应为 0-1000 的整数'; return;
+                    }
+                } else if (!form.value.reason) {
+                    modalError.value = '请填写驳回理由';
+                    return;
+                }
+
+                saving.value = true;
+                try {
+                    const payload = {
+                        id: current.value.id,
+                        approve: mode.value === 'approve',
+                        type: form.value.type,
+                        days: form.value.days,
+                        stock: form.value.stock,
+                        reason: form.value.reason
+                    };
+                    await Lib.post('/recommend/review', payload);
+                    Lib.toast(mode.value === 'approve' ? '已通过推荐，图书已加入馆藏' : '已驳回该推荐');
+                    modalOpen.value = false;
+                    await load();
+                } catch (e) {
+                    modalError.value = Lib.errorMessage(e);
+                } finally {
+                    saving.value = false;
+                }
+            }
+
+            function doLogout() {
+                Lib.logout();
+            }
+
+            onMounted(async function () {
+                me.value = await Lib.initPage('审阅推荐');
+                await load();
+            });
+
+            return {
+                me, pending, loading, error,
+                modalOpen, mode, current, form, modalError, saving,
+                load, openReview, submitReview, doLogout, Lib
+            };
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>

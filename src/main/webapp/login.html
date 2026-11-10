@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - 图书馆管理系统</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app" class="auth-page" v-cloak>
+    <div class="auth-card">
+        <div class="auth-brand">
+            <span class="logo">图</span>
+            <div>
+                <div class="auth-title">图书馆管理系统</div>
+                <div class="auth-subtitle">LibraryWeb2026 · Servlet + JDBC</div>
+            </div>
+        </div>
+
+        <div v-if="error" class="form-error">{{ error }}</div>
+
+        <form @submit.prevent="submit">
+            <div class="field">
+                <label>用户名<span class="required">*</span></label>
+                <input class="input" v-model.trim="form.name" placeholder="请输入姓名" autocomplete="username">
+            </div>
+            <div class="field">
+                <label>密码<span class="required">*</span></label>
+                <input class="input" type="password" v-model="form.password" placeholder="请输入密码" autocomplete="current-password">
+            </div>
+            <div class="field">
+                <label>验证码<span class="required">*</span></label>
+                <div class="captcha-row">
+                    <input class="input" v-model.trim="form.captcha" maxlength="4" placeholder="请输入 4 位验证码" autocomplete="off">
+                    <img class="captcha-img" :src="captchaUrl" alt="验证码" title="点击刷新" @click="refreshCaptcha">
+                </div>
+            </div>
+            <button class="btn btn-primary btn-block" type="submit" :disabled="loading">
+                {{ loading ? '登录中...' : '登 录' }}
+            </button>
+            <div class="row-between mt-12">
+                <button class="btn btn-ghost btn-sm" type="button" @click="reset">重置</button>
+                <a href="register.html">还没有账号？去注册</a>
+            </div>
+        </form>
+
+        <div class="auth-demo">
+            演示账号：admin / admin123（管理员）<br>
+            operator / operator123（操作员）<br>
+            student1 / student123（学生）<br>
+            teacher / teacher123（教师）
+        </div>
+    </div>
+</div>
+
+<script src="vendor/vue.global.prod.js"></script>
+<script src="vendor/axios.min.js"></script>
+<script src="js/common.js"></script>
+<script>
+    const { createApp, ref, onMounted } = Vue;
+
+    createApp({
+        setup() {
+            const form = ref({ name: '', password: '', captcha: '' });
+            const error = ref('');
+            const loading = ref(false);
+            const captchaUrl = ref('');
+
+            function refreshCaptcha() {
+                captchaUrl.value = Lib.CTX + '/api/captcha?t=' + Date.now();
+            }
+
+            function reset() {
+                form.value = { name: '', password: '', captcha: '' };
+                error.value = '';
+                refreshCaptcha();
+            }
+
+            async function submit() {
+                error.value = '';
+                if (!form.value.name) {
+                    error.value = '请输入用户名';
+                    return;
+                }
+                if (!form.value.password) {
+                    error.value = '请输入密码';
+                    return;
+                }
+                if (!form.value.captcha) {
+                    error.value = '请输入验证码';
+                    return;
+                }
+                loading.value = true;
+                try {
+                    await Lib.post('/auth/login', form.value);
+                    Lib.toast('登录成功，正在进入系统');
+                    setTimeout(function () {
+                        location.href = Lib.CTX + '/home.html';
+                    }, 350);
+                } catch (e) {
+                    error.value = Lib.errorMessage(e);
+                    form.value.captcha = '';
+                    refreshCaptcha();
+                } finally {
+                    loading.value = false;
+                }
+            }
+
+            onMounted(refreshCaptcha);
+
+            return { form, error, loading, captchaUrl, refreshCaptcha, reset, submit };
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>
