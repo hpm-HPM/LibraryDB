@@ -1038,17 +1038,6 @@ table.data-table {
     margin-top: 17px;
 }
 
-.auth-demo {
-    margin-top: 18px;
-    padding: 11px 13px;
-    border-radius: 10px;
-    background: #f8faff;
-    border: 1px dashed #c7d2fe;
-    color: #6b7280;
-    font-size: 12px;
-    line-height: 1.7;
-}
-
 .captcha-row {
     display: flex;
     gap: 10px;
