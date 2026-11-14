@@ -61,5 +61,4 @@ src/main/webapp
 ## 说明
 
 - 未使用 JSP、Spring、MyBatis，按要求使用 Servlet + JDBC。
-- 数据库密码仅用于本地演示，推送到公开仓库前请修改。
 - 详细接口和实现可查看源码。
